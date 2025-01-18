@@ -1,7 +1,7 @@
 const express = require("express");
 const dotenv = require("dotenv");
 const { registerRoutes } = require("./routes");
-const { scheduleJobs } = require("./jobs");
+// const { scheduleJobs } = require("./jobs");
 
 dotenv.config();
 const app = express();
@@ -18,7 +18,7 @@ app.use((err, req, res, next) => {
 });
 
 // Start scheduled jobs
-scheduleJobs();
+// scheduleJobs();
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () =>

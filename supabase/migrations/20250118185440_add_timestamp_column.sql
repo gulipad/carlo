@@ -1,0 +1,2 @@
+ALTER TABLE Users
+ADD COLUMN last_message_timestamp TIMESTAMP DEFAULT NULL;

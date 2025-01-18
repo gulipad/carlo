@@ -1,15 +1,22 @@
 const express = require("express");
+const { fetchGospelByDate } = require("../services/gospelService");
+const webhookRoutes = require("./webhook");
 const router = express.Router();
 
-// Example user route (extend as needed)
-router.post("/onboard", async (req, res) => {
-  const { phone_number, timezone, preferred_time } = req.body;
-  // Add user logic will go here
-  res.json({ message: "User onboarded successfully!" });
+router.get("/gospel/:date", async (req, res) => {
+  const { date } = req.params;
+
+  try {
+    const gospel = await fetchGospelByDate(date);
+    res.json({ date, data: gospel });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 function registerRoutes(app) {
   app.use("/api", router);
+  app.use("/", webhookRoutes);
 }
 
 module.exports = { registerRoutes };

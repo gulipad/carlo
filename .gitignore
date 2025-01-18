@@ -15,3 +15,6 @@ yarn-error.log*
 supabase/.temp/
 supabase/.volumes/
 supabase/.db/
+
+# VSCode
+.vscode
