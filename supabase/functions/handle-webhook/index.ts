@@ -56,7 +56,7 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      return👋 new Response("Event received", { status: 200 });
+      return new Response("Event received", { status: 200 });
     } else {
       return new Response("Method Not Allowed", { status: 405 });
     }
