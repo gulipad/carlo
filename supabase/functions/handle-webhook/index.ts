@@ -4,13 +4,30 @@
 
 // Setup type definitions for built-in Supabase Runtime APIs
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-
 import { createClient } from "npm:@supabase/supabase-js@2.47.0";
+import { GoogleGenerativeAI } from "npm:@google/generative-ai";
+import { systemInstructions } from "./systemInstruction.ts";
+import { functionDeclarations } from "./functionDeclarations.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
 );
+
+const genAI = new GoogleGenerativeAI(Deno.env.get("GEMINI_API_KEY")!);
+
+const model = genAI.getGenerativeModel({
+  model: "gemini-1.5-flash",
+  systemInstruction: systemInstructions,
+  tools: [
+    {
+      functionDeclarations: functionDeclarations,
+    },
+  ],
+  toolConfig: { functionCallingConfig: { mode: "AUTO" } },
+});
+
+const chatSessions = new Map<string, any>();
 
 const verifyToken = Deno.env.get("WHATSAPP_WEBHOOK_VERIFY_TOKEN");
 
@@ -69,42 +86,111 @@ Deno.serve(async (req: Request) => {
 async function handleUserMessage(phoneNumber: string, message: string) {
   try {
     const user = await getUserByPhoneNumber(phoneNumber);
-    console.log("user");
+
     if (!user) {
       await registerUser(phoneNumber);
       await sendWhatsAppMessage(
         phoneNumber,
-        "Hola me llamo Carlo!👋 Cada día a las 7:30 AM CET te mandaré el Evangelio del día.",
+        "Hola me llamo Carlo!👋 Cada día a las 7:30 AM CET te mandaré el Evangelio del día."
       );
-      await sendWhatsAppMessage(
-        phoneNumber,
-        "Aquí tienes el de hoy 😊",
-      );
+      await sendWhatsAppMessage(phoneNumber, "Aquí tienes el de hoy 😊");
+
+      const today = new Date().toISOString().split("T")[0];
+      const gospel = await fetchGospelByDate(today);
+
+      if (!gospel) {
+        await sendWhatsAppMessage(
+          phoneNumber,
+          "Lo siento, no he podido conseguir el Evangelio de hoy 😔."
+        );
+        await updateLastMessageTimestamp(phoneNumber);
+        return;
+      }
+
+      const formattedDate = new Date().toLocaleDateString("es-ES", {
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+      });
+
+      const messageText = `${formattedDate}\n\n📖 *${gospel.content.title}📖*\n\n_${gospel.content.gospel}_\n\n${gospel.content.text}`;
+
+      await sendWhatsAppMessage(phoneNumber, messageText);
+      await updateLastMessageTimestamp(phoneNumber);
+      return;
     }
 
-    await updateLastMessageTimestamp(phoneNumber);
+    const geminiResponse = await queryGemini(phoneNumber, message);
+    console.log("GEMINI", geminiResponse);
 
-    const today = new Date().toISOString().split("T")[0];
-    const gospel = await fetchGospelByDate(today);
-    console.log("TEST", gospel);
-    if (!gospel) {
+    if (!geminiResponse || !geminiResponse.content) {
       await sendWhatsAppMessage(
         phoneNumber,
-        "Lo siento, no he podido conseguir el Evangelio de hoy 😔.",
+        "Lo siento, no entendí tu solicitud."
       );
       return;
     }
 
-    const formattedDate = new Date().toLocaleDateString("es-ES", {
-      day: "2-digit",
-      month: "long",
-      year: "2-digit",
-    });
+    // Extract response parts
+    const content = geminiResponse.content;
+    if (!content || !content.parts) {
+      await sendWhatsAppMessage(
+        phoneNumber,
+        "Lo siento, no entendí tu solicitud."
+      );
+      return;
+    }
 
-    const messageText =
-      `${formattedDate}\n\n📖 *${gospel.content.title}📖*\n\n_${gospel.content.gospel}_\n\n${gospel.content.text}`;
+    // Iterate over response parts
+    for (const part of content.parts) {
+      if (part.text) {
+        // Send plain text response
+        console.log("WHAPP:", part.text);
+        await sendWhatsAppMessage(phoneNumber, part.text);
+      }
 
-    await sendWhatsAppMessage(phoneNumber, messageText);
+      if (part.functionCall) {
+        // Handle function call
+        const { name, args } = part.functionCall;
+
+        switch (name) {
+          case "fetch_gospel": {
+            const today = new Date().toISOString().split("T")[0];
+            const gospel = await fetchGospelByDate(today);
+            if (gospel) {
+              const formattedDate = new Date().toLocaleDateString("es-ES", {
+                day: "2-digit",
+                month: "long",
+                year: "numeric",
+              });
+              const messageText = `${formattedDate}\n\n📖 *${gospel.content.title}📖*\n\n_${gospel.content.gospel}_\n\n${gospel.content.text}`;
+              await sendWhatsAppMessage(phoneNumber, messageText);
+            } else {
+              await sendWhatsAppMessage(
+                phoneNumber,
+                "Lo siento, no he podido conseguir el Evangelio de hoy 😔."
+              );
+            }
+            break;
+          }
+
+          case "update_gospel_delivery_time": {
+            const { time, timezone } = args;
+            console.log("TIME:", time, timezone);
+            await updateGospelDeliveryTime(phoneNumber, time, timezone);
+            break;
+          }
+
+          default: {
+            console.error(`Unknown function call: ${name}`);
+            await sendWhatsAppMessage(
+              phoneNumber,
+              "Lo siento, no puedo realizar esa acción por el momento."
+            );
+          }
+        }
+      }
+    }
   } catch (err) {
     console.error("Error handling user message:", err);
   }
@@ -128,7 +214,7 @@ async function getUserByPhoneNumber(phoneNumber: string) {
 async function registerUser(phoneNumber: string) {
   const { error } = await supabase.from("users").insert({
     phone_number: phoneNumber,
-    timezone: "CET",
+    timezone: "UTC+1",
     preferred_time: "07:30:00",
     subscribed: true,
     last_message_timestamp: new Date().toISOString(),
@@ -184,7 +270,7 @@ async function sendWhatsAppMessage(recipient: string, message: string) {
           type: "text",
           text: { body: message },
         }),
-      },
+      }
     );
 
     if (!response.ok) {
@@ -193,4 +279,115 @@ async function sendWhatsAppMessage(recipient: string, message: string) {
   } catch (err) {
     console.error("Error in sendWhatsAppMessage:", err);
   }
+}
+
+async function getOrCreateChatSession(userId: string) {
+  // Fetch the chat history from Supabase
+  const { data, error } = await supabase
+    .from("chat_histories")
+    .select("history")
+    .eq("user_id", userId)
+    .single();
+
+  if (error) {
+    if (error.code === "PGRST116") {
+      // No history exists, create a new session with an empty history
+      console.log("NEW SESSION");
+      const chatSession = model.startChat({
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 256,
+        },
+        history: [],
+      });
+
+      // Store the new session in Supabase
+      await supabase.from("chat_histories").insert({
+        user_id: userId,
+        history: JSON.stringify([]),
+      });
+
+      return chatSession;
+    } else {
+      console.error("Error fetching session:", error);
+      throw error;
+    }
+  }
+
+  // Restore the existing history
+  console.log("RESTORING SESSION");
+  const history = JSON.parse(data.history);
+  return model.startChat({
+    generationConfig: {
+      temperature: 0.7,
+      maxOutputTokens: 256,
+    },
+    history,
+  });
+}
+
+async function updateChatHistory(userId: string, history: any) {
+  await supabase.from("chat_histories").upsert({
+    user_id: userId,
+    history: JSON.stringify(history),
+    last_updated: new Date().toISOString(),
+  });
+}
+
+async function queryGemini(userId: string, userMessage: string): Promise<any> {
+  try {
+    // Get or create the chat session
+    const chatSession = await getOrCreateChatSession(userId);
+
+    // Send the user's message to Gemini
+    const response = await chatSession.sendMessage(userMessage);
+
+    if (!response?.response?.candidates?.[0]) {
+      throw new Error("Invalid response from Gemini");
+    }
+
+    // Extract history from the chat session
+    const history = (await chatSession.getHistory()) || [];
+    console.log("HISTORY 2:", history);
+
+    // Append the new interaction
+    history.push({ role: "user", parts: [{ text: userMessage }] });
+
+    const content = response.response.candidates[0].content;
+    content.parts.forEach((part: any) => {
+      if (part.text) {
+        history.push({ role: "model", parts: [{ text: part.text }] });
+      }
+    });
+
+    // Save the updated history
+    await updateChatHistory(userId, history);
+
+    return response.response.candidates[0];
+  } catch (error) {
+    console.error("Error querying Gemini:", error);
+    return null;
+  }
+}
+
+async function updateGospelDeliveryTime(
+  phoneNumber: string,
+  time: string,
+  timezone: string
+): Promise<boolean> {
+  const { error } = await supabase
+    .from("users")
+    .update({ preferred_time: time, timezone })
+    .eq("phone_number", phoneNumber);
+
+  if (error) {
+    console.error("Error updating delivery time:", error.message);
+    return false;
+  }
+
+  return true;
+}
+
+async function resetChatSession(userId: string) {
+  chatSessions.delete(userId);
 }
