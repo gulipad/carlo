@@ -15,15 +15,31 @@ export const functionDeclarations: FunctionDeclaration[] = [
         time: {
           type: "string",
           description:
-            "The new delivery time converted to HH:MM:SS 24h format. It is imperative it is in time should be in the HH:MM:SS format",
+            "The new delivery time. Take the user input and convert it to HH:MM:SS 24h format.",
         },
         timezone: {
           type: "string",
           description:
-            "The timezone of the user converted to UTC. It is imperative that timezone is in UTC+X or UTC-X format.",
+            "The timezone of the user. Take the user input and convert it to a timezone format that will be correctly interpreted in JavaScript.",
         },
       },
       required: ["time", "timezone"],
+    },
+  },
+  {
+    name: "fetch_bible_inspiration",
+    description:
+      "Thinks about the ideal Bible excerpt from, and fetches it from the Bible database.",
+    parameters: {
+      type: "object",
+      properties: {
+        reason: {
+          type: "string",
+          description:
+            "The reason that the user is asking for Bible inspiration. It could be just random.",
+        },
+      },
+      required: ["reason"],
     },
   },
 ];

@@ -6,7 +6,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.47.0";
 import { GoogleGenerativeAI } from "npm:@google/generative-ai";
-import { systemInstructions } from "./systemInstruction.ts";
+import { systemInstructionCarlo } from "./systemInstructionCarlo.ts";
+import { systemInstructionBibleInterpreter } from "./systemInstructionBibleInterpreter.ts";
 import { functionDeclarations } from "./functionDeclarations.ts";
 
 const supabase = createClient(
@@ -18,7 +19,7 @@ const genAI = new GoogleGenerativeAI(Deno.env.get("GEMINI_API_KEY")!);
 
 const model = genAI.getGenerativeModel({
   model: "gemini-1.5-flash",
-  systemInstruction: systemInstructions,
+  systemInstruction: systemInstructionCarlo,
   tools: [
     {
       functionDeclarations: functionDeclarations,
@@ -103,7 +104,6 @@ async function handleUserMessage(phoneNumber: string, message: string) {
           phoneNumber,
           "Lo siento, no he podido conseguir el Evangelio de hoy 😔."
         );
-        await updateLastMessageTimestamp(phoneNumber);
         return;
       }
 
@@ -116,12 +116,10 @@ async function handleUserMessage(phoneNumber: string, message: string) {
       const messageText = `${formattedDate}\n\n📖 *${gospel.content.title}📖*\n\n_${gospel.content.gospel}_\n\n${gospel.content.text}`;
 
       await sendWhatsAppMessage(phoneNumber, messageText);
-      await updateLastMessageTimestamp(phoneNumber);
       return;
     }
 
     const geminiResponse = await queryGemini(phoneNumber, message);
-    console.log("GEMINI", geminiResponse);
 
     if (!geminiResponse || !geminiResponse.content) {
       await sendWhatsAppMessage(
@@ -143,9 +141,7 @@ async function handleUserMessage(phoneNumber: string, message: string) {
 
     // Iterate over response parts
     for (const part of content.parts) {
-      if (part.text) {
-        // Send plain text response
-        console.log("WHAPP:", part.text);
+      if (part.text && part.text.trim() !== "" && part.text.trim() !== "\n") {
         await sendWhatsAppMessage(phoneNumber, part.text);
       }
 
@@ -157,27 +153,60 @@ async function handleUserMessage(phoneNumber: string, message: string) {
           case "fetch_gospel": {
             const today = new Date().toISOString().split("T")[0];
             const gospel = await fetchGospelByDate(today);
-            if (gospel) {
-              const formattedDate = new Date().toLocaleDateString("es-ES", {
-                day: "2-digit",
-                month: "long",
-                year: "numeric",
-              });
-              const messageText = `${formattedDate}\n\n📖 *${gospel.content.title}📖*\n\n_${gospel.content.gospel}_\n\n${gospel.content.text}`;
-              await sendWhatsAppMessage(phoneNumber, messageText);
-            } else {
+            if (!gospel) {
               await sendWhatsAppMessage(
                 phoneNumber,
                 "Lo siento, no he podido conseguir el Evangelio de hoy 😔."
               );
+              return; // Stop further processing if there's an error
             }
+            const formattedDate = new Date().toLocaleDateString("es-ES", {
+              day: "2-digit",
+              month: "long",
+              year: "numeric",
+            });
+            const messageText = `${formattedDate}\n\n📖 *${gospel.content.title}📖*\n\n_${gospel.content.gospel}_\n\n${gospel.content.text}`;
+            await sendWhatsAppMessage(phoneNumber, messageText);
+            break;
+          }
+
+          case "fetch_bible_inspiration": {
+            const { reason } = args;
+            const bibleInspiration = await fetchBibleInspiration(reason);
+            if (!bibleInspiration) {
+              await sendWhatsAppMessage(
+                phoneNumber,
+                "Lo siento, no he podido conseguir una inspiración bíblica en este momento."
+              );
+              return; // Stop further processing if there's an error
+            }
+            const messageText = `📖 *${bibleInspiration.book} ${bibleInspiration.chapter}:${bibleInspiration.start_verse}-${bibleInspiration.end_verse}* \n\n${bibleInspiration.text}\n\n_${bibleInspiration.reason}_`;
+            await sendWhatsAppMessage(phoneNumber, messageText);
+
+            // Update the stored chat history with the bible inspiration message
+            const chatSession = await getOrCreateChatSession(phoneNumber);
+            const history = (await chatSession.getHistory()) || [];
+            history.push({ text: messageText, role: "bot" }); // Append the message to history
+
+            // Save the updated history
+            await updateChatHistory(phoneNumber, history);
             break;
           }
 
           case "update_gospel_delivery_time": {
             const { time, timezone } = args;
-            console.log("TIME:", time, timezone);
-            await updateGospelDeliveryTime(phoneNumber, time, timezone);
+            const success = await updateGospelDeliveryTime(
+              phoneNumber,
+              time,
+              timezone
+            );
+            if (!success) {
+              await sendWhatsAppMessage(
+                phoneNumber,
+                "Lo siento, no he podido actualizar la hora de entrega del Evangelio."
+              );
+              return; // Stop further processing if there's an error
+            }
             break;
           }
 
@@ -187,6 +216,7 @@ async function handleUserMessage(phoneNumber: string, message: string) {
               phoneNumber,
               "Lo siento, no puedo realizar esa acción por el momento."
             );
+            return; // Stop further processing for unknown function calls
           }
         }
       }
@@ -275,7 +305,9 @@ async function sendWhatsAppMessage(recipient: string, message: string) {
 
     if (!response.ok) {
       console.error("Error sending WhatsApp message:", await response.text());
+      return;
     }
+    await updateLastMessageTimestamp(recipient);
   } catch (err) {
     console.error("Error in sendWhatsAppMessage:", err);
   }
@@ -292,7 +324,6 @@ async function getOrCreateChatSession(userId: string) {
   if (error) {
     if (error.code === "PGRST116") {
       // No history exists, create a new session with an empty history
-      console.log("NEW SESSION");
       const chatSession = model.startChat({
         generationConfig: {
           temperature: 0.7,
@@ -315,7 +346,6 @@ async function getOrCreateChatSession(userId: string) {
   }
 
   // Restore the existing history
-  console.log("RESTORING SESSION");
   const history = JSON.parse(data.history);
   return model.startChat({
     generationConfig: {
@@ -348,17 +378,6 @@ async function queryGemini(userId: string, userMessage: string): Promise<any> {
 
     // Extract history from the chat session
     const history = (await chatSession.getHistory()) || [];
-    console.log("HISTORY 2:", history);
-
-    // Append the new interaction
-    history.push({ role: "user", parts: [{ text: userMessage }] });
-
-    const content = response.response.candidates[0].content;
-    content.parts.forEach((part: any) => {
-      if (part.text) {
-        history.push({ role: "model", parts: [{ text: part.text }] });
-      }
-    });
 
     // Save the updated history
     await updateChatHistory(userId, history);
@@ -366,6 +385,111 @@ async function queryGemini(userId: string, userMessage: string): Promise<any> {
     return response.response.candidates[0];
   } catch (error) {
     console.error("Error querying Gemini:", error);
+    return null;
+  }
+}
+
+export async function fetchBibleInspiration(reason: string): Promise<{
+  book: string;
+  chapter: number;
+  start_verse: number;
+  end_verse: number;
+  reason: string;
+  text: string;
+} | null> {
+  try {
+    // Set up the Bible interpreter model
+    const bibleModel = genAI.getGenerativeModel({
+      model: "gemini-1.5-flash",
+      systemInstruction: systemInstructionBibleInterpreter,
+    });
+
+    // Call the model with the user reason
+    const result = await bibleModel.generateContent({
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              text: reason,
+            },
+          ],
+        },
+      ],
+      generationConfig: {
+        temperature: 1,
+        topP: 0.95,
+        topK: 40,
+        maxOutputTokens: 8192,
+        responseMimeType: "application/json",
+      },
+    });
+
+    // Parse the JSON string from the response
+    const parsedResponse = JSON.parse(
+      result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "{}"
+    );
+
+    const {
+      book,
+      chapter,
+      start_verse,
+      end_verse,
+      reason: explanation,
+    } = parsedResponse;
+
+    if (!book || !chapter || !start_verse || !end_verse || !explanation) {
+      console.error(
+        "Invalid response from Bible Interpreter model:",
+        parsedResponse
+      );
+      return null;
+    }
+
+    // Query the Bible table for the verses
+    const { data, error } = await supabase
+      .from("bible_verses")
+      .select("text, verse_annotations")
+      .eq("book", book)
+      .eq("chapter", chapter)
+      .gte("verse", start_verse)
+      .lte("verse", end_verse)
+      .order("verse")
+      .order("verse_annotations", { ascending: true, nullsFirst: true });
+
+    if (error) {
+      console.error("Error fetching verses from Bible table:", error.message);
+      return null;
+    }
+
+    if (!data || data.length === 0) {
+      console.error("No verses found in the Bible table for the given query.");
+      return null;
+    }
+
+    // Filter and prioritize verses
+    const filteredVerses = data.filter(
+      (row: { verse_annotations?: string | null }) =>
+        !row.verse_annotations || row.verse_annotations === "a"
+    );
+    const selectedVerse =
+      filteredVerses.length > 0 ? filteredVerses[0] : data[0];
+
+    // Combine the verses into a single string
+    const verseText = selectedVerse.text;
+
+    const prettyBookName = prettifyBookName(book);
+
+    return {
+      book: prettyBookName,
+      chapter,
+      start_verse,
+      end_verse,
+      reason: explanation,
+      text: verseText,
+    };
+  } catch (error) {
+    console.error("Error in fetchBibleInspiration:", error);
     return null;
   }
 }
@@ -391,3 +515,83 @@ async function updateGospelDeliveryTime(
 async function resetChatSession(userId: string) {
   chatSessions.delete(userId);
 }
+
+function prettifyBookName(normalizedBook: string): string {
+  return bookNameMap[normalizedBook] || normalizedBook;
+}
+
+const bookNameMap: { [key: string]: string } = {
+  genesis: "Génesis",
+  exodo: "Éxodo",
+  levitico: "Levítico",
+  numeros: "Números",
+  deuteronomio: "Deuteronomio",
+  josue: "Josué",
+  jueces: "Jueces",
+  rut: "Rut",
+  "1-samuel": "1 Samuel",
+  "2-samuel": "2 Samuel",
+  "1-reyes": "1 Reyes",
+  "2-reyes": "2 Reyes",
+  "1-cronicas": "1 Crónicas",
+  "2-cronicas": "2 Crónicas",
+  esdras: "Esdras",
+  nehemias: "Nehemías",
+  tobias: "Tobías",
+  judit: "Judit",
+  ester: "Ester",
+  "1-macabeos": "1 Macabeos",
+  "2-macabeos": "2 Macabeos",
+  job: "Job",
+  salmos: "Salmos",
+  proverbios: "Proverbios",
+  eclesiastes: "Eclesiastés",
+  "cantar-de-los-cantares": "Cantar de los Cantares",
+  sabiduria: "Sabiduría",
+  eclesiastico: "Eclesiástico",
+  isaias: "Isaías",
+  jeremias: "Jeremías",
+  lamentaciones: "Lamentaciones",
+  baruc: "Baruc",
+  ezequiel: "Ezequiel",
+  daniel: "Daniel",
+  oseas: "Oseas",
+  joel: "Joel",
+  amos: "Amós",
+  abdias: "Abdías",
+  jonas: "Jonás",
+  miqueas: "Miqueas",
+  nahun: "Nahúm",
+  habacuc: "Habacuc",
+  sofonias: "Sofonías",
+  ageo: "Ageo",
+  zacarias: "Zacarías",
+  malaquias: "Malaquías",
+  mateo: "Mateo",
+  marcos: "Marcos",
+  lucas: "Lucas",
+  juan: "Juan",
+  "hechos-de-los-apostoles": "Hechos de los Apóstoles",
+  romanos: "Romanos",
+  "1-corintios": "1 Corintios",
+  "2-corintios": "2 Corintios",
+  galatas: "Gálatas",
+  efesios: "Efesios",
+  filipenses: "Filipenses",
+  colosenses: "Colosenses",
+  "1-tesalonicenses": "1 Tesalonicenses",
+  "2-tesalonicenses": "2 Tesalonicenses",
+  "1-timoteo": "1 Timoteo",
+  "2-timoteo": "2 Timoteo",
+  tito: "Tito",
+  filemon: "Filemón",
+  hebreos: "Hebreos",
+  santiago: "Santiago",
+  "1-pedro": "1 Pedro",
+  "2-pedro": "2 Pedro",
+  "juan-cartas-1": "1 Juan",
+  "juan-cartas-2": "2 Juan",
+  "juan-cartas-3": "3 Juan",
+  judas: "Judas",
+  apocalipsis: "Apocalipsis",
+};
