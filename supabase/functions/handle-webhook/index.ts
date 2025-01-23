@@ -195,6 +195,7 @@ async function handleUserMessage(phoneNumber: string, message: string) {
 
           case "update_gospel_delivery_time": {
             const { time, timezone } = args;
+            console.log("UPDATE:", time, timezone);
             const success = await updateGospelDeliveryTime(
               phoneNumber,
               time,
@@ -425,6 +426,7 @@ export async function fetchBibleInspiration(reason: string): Promise<{
       },
     });
 
+    console.log("BIBLE INTERPRETER:", result?.response?.candidates?.[0]);
     // Parse the JSON string from the response
     const parsedResponse = JSON.parse(
       result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "{}"
