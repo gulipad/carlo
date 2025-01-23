@@ -145,6 +145,7 @@ async function handleUserMessage(phoneNumber: string, message: string) {
       return;
     }
 
+    console.log("BRAIN:", content.parts);
     // Iterate over response parts
     for (const part of content.parts) {
       if (part.text && part.text.trim() !== "" && part.text.trim() !== "\n") {
@@ -178,6 +179,7 @@ async function handleUserMessage(phoneNumber: string, message: string) {
 
           case "fetch_bible_inspiration": {
             const { reason } = args;
+            console.log("REASON:", reason);
             const bibleInspiration = await fetchBibleInspiration(reason);
             if (!bibleInspiration) {
               await sendWhatsAppMessage(
