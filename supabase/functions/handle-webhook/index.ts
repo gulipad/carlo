@@ -186,7 +186,7 @@ async function handleUserMessage(phoneNumber: string, message: string) {
             // Update the stored chat history with the bible inspiration message
             const chatSession = await getOrCreateChatSession(phoneNumber);
             const history = (await chatSession.getHistory()) || [];
-            history.push({ text: messageText, role: "model" }); // Append the message to history
+            history.push({ role: "model", parts: [{ text: messageText }] }); // Append the message to history
 
             // Save the updated history
             await updateChatHistory(phoneNumber, history);
