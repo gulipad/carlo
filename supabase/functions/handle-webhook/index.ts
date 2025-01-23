@@ -88,13 +88,18 @@ async function handleUserMessage(phoneNumber: string, message: string) {
   try {
     const user = await getUserByPhoneNumber(phoneNumber);
 
+    // If this is a first time user
     if (!user) {
       await registerUser(phoneNumber);
+      const welcomeMessage = `
+      Hola me llamo Carlo!👋 Estoy aquí para acercarte a Dios. Puedo:
+* Enviarte el Evangelio del día a la hora que quieras. Ahora lo recibirás a las 7:30 CET, pero puedes cambiarlo cuando quieras.🙏
+* Ayudarte a encontrar inspiración en la Biblia para cualquier situación que estés viviendo.  📖`;
+      await sendWhatsAppMessage(phoneNumber, welcomeMessage);
       await sendWhatsAppMessage(
         phoneNumber,
-        "Hola me llamo Carlo!👋 Cada día a las 7:30 AM CET te mandaré el Evangelio del día."
+        "Aquí tienes el Evangelio de hoy 😊"
       );
-      await sendWhatsAppMessage(phoneNumber, "Aquí tienes el de hoy 😊");
 
       const today = new Date().toISOString().split("T")[0];
       const gospel = await fetchGospelByDate(today);
@@ -119,6 +124,7 @@ async function handleUserMessage(phoneNumber: string, message: string) {
       return;
     }
 
+    // Else this is an existing user
     const geminiResponse = await queryGemini(phoneNumber, message);
 
     if (!geminiResponse || !geminiResponse.content) {
