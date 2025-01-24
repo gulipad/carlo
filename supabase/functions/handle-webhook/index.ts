@@ -93,7 +93,7 @@ async function handleUserMessage(phoneNumber: string, message: string) {
       await registerUser(phoneNumber);
       const welcomeMessage = `
       Hola me llamo Carlo!👋 Estoy aquí para acercarte a Dios. Puedo:
-* Enviarte el Evangelio del día a la hora que quieras. Ahora lo recibirás a las 7:30 CET, pero puedes cambiarlo cuando quieras.🙏
+* Enviarte el Evangelio y Santoral del día a la hora que quieras. Ahora lo recibirás a las 7:30 CET, pero puedes cambiarlo cuando quieras.🙏
 * Ayudarte a encontrar inspiración en la Biblia para cualquier situación que estés viviendo.  📖`;
       await sendWhatsAppMessage(phoneNumber, welcomeMessage);
       await sendWhatsAppMessage(
