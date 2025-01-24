@@ -181,7 +181,9 @@ async function handleUserMessage(phoneNumber: string, message: string) {
             const today = new Date().toISOString().split("T")[0];
             const saintsData = await fetchSaintsByDate(today);
             if (!saintsData) {
-              return; // Do not send a message if there are no saints
+              const messageText = `He tenido un problema consiguiendo el Santoral. Inténtalo más tarde 🙏`;
+              await sendWhatsAppMessage(phoneNumber, messageText);
+              return;
             }
 
             const { saints, link } = saintsData;
