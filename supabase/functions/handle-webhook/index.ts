@@ -96,10 +96,6 @@ async function handleUserMessage(phoneNumber: string, message: string) {
 * Enviarte el Evangelio y Santoral del día a la hora que quieras. Ahora lo recibirás a las 7:30 CET, pero puedes cambiarlo cuando quieras.🙏
 * Ayudarte a encontrar inspiración en la Biblia para cualquier situación que estés viviendo.  📖`;
       await sendWhatsAppMessage(phoneNumber, welcomeMessage);
-      await sendWhatsAppMessage(
-        phoneNumber,
-        "Aquí tienes el Evangelio de hoy 😊"
-      );
 
       const today = new Date().toISOString().split("T")[0];
       const gospel = await fetchGospelByDate(today);
@@ -119,8 +115,16 @@ async function handleUserMessage(phoneNumber: string, message: string) {
       });
 
       const messageText = `${formattedDate}\n\n📖 *${gospel.content.title}📖*\n\n_${gospel.content.gospel}_\n\n${gospel.content.text}`;
-
+      await sendWhatsAppMessage(
+        phoneNumber,
+        "Aquí tienes el Evangelio de hoy 😊"
+      );
       await sendWhatsAppMessage(phoneNumber, messageText);
+      await new Promise((resolve) => setTimeout(resolve, 30000)); // Wait for 30 seconds
+      await sendWhatsAppMessage(
+        phoneNumber,
+        "Y una nota *importante*! Sólo puedo escribirte si tú me has escrito en las últimas 24 horas. Con que respondas con un 'Gracias' al mensaje diario, bastará para que te llege el del día siguiente.😊"
+      );
       return;
     }
 
