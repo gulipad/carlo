@@ -6,6 +6,10 @@ export const functionDeclarations: FunctionDeclaration[] = [
     description: "Fetch the daily gospel and send it back to the user.",
   },
   {
+    name: "fetch_saints",
+    description: "Fetch the daily saints and send them back to the user.",
+  },
+  {
     name: "update_gospel_delivery_time",
     description:
       "Updates the time the user will receive their daily gospel once time and timezone are provided.",

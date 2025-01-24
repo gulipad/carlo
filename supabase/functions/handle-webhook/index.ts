@@ -177,6 +177,35 @@ async function handleUserMessage(phoneNumber: string, message: string) {
             break;
           }
 
+          case "fetch_saints": {
+            const today = new Date().toISOString().split("T")[0];
+            const saintsData = await fetchSaintsByDate(today);
+            if (!saintsData) {
+              return; // Do not send a message if there are no saints
+            }
+
+            const { saints, link } = saintsData;
+            if (!saints && !link) {
+              const messageText = `Hoy no tengo Santoral – ¿quizás es 29 de Febrero?`;
+              await sendWhatsAppMessage(phoneNumber, messageText);
+              return;
+            }
+
+            if (!saints && link) {
+              const messageText = `Hoy no tengo registro de nombres que celebren su Santo, pero si quieres saber más sobre el Santoral de hoy, puedes leer más aquí: ${link}.`;
+              await sendWhatsAppMessage(phoneNumber, messageText);
+            }
+
+            const saintList = saints.split(",").filter(Boolean).join(", ");
+            const messageText =
+              saints.split(",").length === 1
+                ? `Hoy celebra su Santo: ${saintList}. Si quieres saber más sobre el Santoral de hoy, puedes verlo aquí: ${link}.`
+                : `Hoy celebran sus Santos: ${saintList}. Si quieres saber más sobre el Santoral de hoy, puedes verlo aquí: ${link}.`;
+
+            await sendWhatsAppMessage(phoneNumber, messageText);
+            break;
+          }
+
           case "fetch_bible_inspiration": {
             const { reason } = args;
             console.log("REASON:", reason);
@@ -288,6 +317,29 @@ async function fetchGospelByDate(date: string) {
   }
 
   return data;
+}
+
+async function fetchSaintsByDate(date: string) {
+  const today = new Date(date);
+  const month = today.getMonth() + 1; // Months are 0-indexed
+  const day = today.getDate();
+  const { data, error } = await supabase
+    .from("saints")
+    .select("saints, link") // Select only the relevant columns
+    .eq("day", day) // Match the day
+    .eq("month", month) // Match the month
+    .single(); // Expect only one result
+
+  if (error) {
+    console.error("Error fetching saints for the date:", error.message);
+    return null;
+  }
+
+  // Handle null `saints` or `link` gracefully by returning defaults
+  return {
+    saints: data.saints || null, // Default if `saints` is null
+    link: data.link || null, // Null is acceptable for `link`
+  };
 }
 
 async function sendWhatsAppMessage(recipient: string, message: string) {
