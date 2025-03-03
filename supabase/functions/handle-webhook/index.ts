@@ -12,7 +12,7 @@ import { functionDeclarations } from "./functionDeclarations.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
 const genAI = new GoogleGenerativeAI(Deno.env.get("GEMINI_API_KEY")!);
@@ -103,7 +103,7 @@ async function handleUserMessage(phoneNumber: string, message: string) {
       if (!gospel) {
         await sendWhatsAppMessage(
           phoneNumber,
-          "Lo siento, no he podido conseguir el Evangelio de hoy 😔."
+          "Lo siento, no he podido conseguir el Evangelio de hoy 😔.",
         );
         return;
       }
@@ -114,16 +114,17 @@ async function handleUserMessage(phoneNumber: string, message: string) {
         year: "numeric",
       });
 
-      const messageText = `${formattedDate}\n\n📖 *${gospel.content.title}📖*\n\n_${gospel.content.gospel}_\n\n${gospel.content.text}`;
+      const messageText =
+        `${formattedDate}\n\n📖 *${gospel.content.title}📖*\n\n_${gospel.content.gospel}_\n\n${gospel.content.text}`;
       await sendWhatsAppMessage(
         phoneNumber,
-        "Aquí tienes el Evangelio de hoy 😊"
+        "Aquí tienes el Evangelio de hoy 😊",
       );
       await sendWhatsAppMessage(phoneNumber, messageText);
       await new Promise((resolve) => setTimeout(resolve, 30000)); // Wait for 30 seconds
       await sendWhatsAppMessage(
         phoneNumber,
-        "Y una nota *importante*! Sólo puedo escribirte si tú me has escrito en las últimas 24 horas. Con que respondas con un 'Gracias' al mensaje diario, bastará para que te llege el del día siguiente.😊"
+        "Y una nota *importante*! Sólo puedo escribirte si tú me has escrito en las últimas 24 horas. Con que respondas con un 'Gracias' al mensaje diario, bastará para que te llege el del día siguiente.😊",
       );
       return;
     }
@@ -134,7 +135,7 @@ async function handleUserMessage(phoneNumber: string, message: string) {
     if (!geminiResponse || !geminiResponse.content) {
       await sendWhatsAppMessage(
         phoneNumber,
-        "Lo siento, no entendí tu solicitud."
+        "Lo siento, no entendí tu solicitud.",
       );
       return;
     }
@@ -144,7 +145,7 @@ async function handleUserMessage(phoneNumber: string, message: string) {
     if (!content || !content.parts) {
       await sendWhatsAppMessage(
         phoneNumber,
-        "Lo siento, no entendí tu solicitud."
+        "Lo siento, no entendí tu solicitud.",
       );
       return;
     }
@@ -167,7 +168,7 @@ async function handleUserMessage(phoneNumber: string, message: string) {
             if (!gospel) {
               await sendWhatsAppMessage(
                 phoneNumber,
-                "Lo siento, no he podido conseguir el Evangelio de hoy 😔."
+                "Lo siento, no he podido conseguir el Evangelio de hoy 😔.",
               );
               return; // Stop further processing if there's an error
             }
@@ -176,7 +177,8 @@ async function handleUserMessage(phoneNumber: string, message: string) {
               month: "long",
               year: "numeric",
             });
-            const messageText = `${formattedDate}\n\n📖 *${gospel.content.title}📖*\n\n_${gospel.content.gospel}_\n\n${gospel.content.text}`;
+            const messageText =
+              `${formattedDate}\n\n📖 *${gospel.content.title}📖*\n\n_${gospel.content.gospel}_\n\n${gospel.content.text}`;
             await sendWhatsAppMessage(phoneNumber, messageText);
             break;
           }
@@ -185,28 +187,30 @@ async function handleUserMessage(phoneNumber: string, message: string) {
             const today = new Date().toISOString().split("T")[0];
             const saintsData = await fetchSaintsByDate(today);
             if (!saintsData) {
-              const messageText = `He tenido un problema consiguiendo el Santoral. Inténtalo más tarde 🙏`;
+              const messageText =
+                `He tenido un problema consiguiendo el Santoral. Inténtalo más tarde 🙏`;
               await sendWhatsAppMessage(phoneNumber, messageText);
               return;
             }
 
             const { saints, link } = saintsData;
             if (!saints && !link) {
-              const messageText = `Hoy no tengo Santoral – ¿quizás es 29 de Febrero?`;
+              const messageText =
+                `Hoy no tengo Santoral – ¿quizás es 29 de Febrero?`;
               await sendWhatsAppMessage(phoneNumber, messageText);
               return;
             }
 
             if (!saints && link) {
-              const messageText = `Hoy no tengo registro de nombres que celebren su Santo, pero si quieres saber más sobre el Santoral de hoy, puedes leer más aquí: ${link}.`;
+              const messageText =
+                `Hoy no tengo registro de nombres que celebren su Santo, pero si quieres saber más sobre el Santoral de hoy, puedes leer más aquí: ${link}.`;
               await sendWhatsAppMessage(phoneNumber, messageText);
             }
 
             const saintList = saints.split(",").filter(Boolean).join(", ");
-            const messageText =
-              saints.split(",").length === 1
-                ? `Hoy celebra su Santo: ${saintList}. Si quieres saber más sobre el Santoral de hoy, puedes verlo aquí: ${link}.`
-                : `Hoy celebran sus Santos: ${saintList}. Si quieres saber más sobre el Santoral de hoy, puedes verlo aquí: ${link}.`;
+            const messageText = saints.split(",").length === 1
+              ? `Hoy celebra su Santo: ${saintList}. Si quieres saber más sobre el Santoral de hoy, puedes verlo aquí: ${link}.`
+              : `Hoy celebran sus Santos: ${saintList}. Si quieres saber más sobre el Santoral de hoy, puedes verlo aquí: ${link}.`;
 
             await sendWhatsAppMessage(phoneNumber, messageText);
             break;
@@ -219,11 +223,12 @@ async function handleUserMessage(phoneNumber: string, message: string) {
             if (!bibleInspiration) {
               await sendWhatsAppMessage(
                 phoneNumber,
-                "Lo siento, no he podido conseguir una inspiración bíblica en este momento."
+                "Lo siento, no he podido conseguir una inspiración bíblica en este momento.",
               );
               return; // Stop further processing if there's an error
             }
-            const messageText = `📖 *${bibleInspiration.book} ${bibleInspiration.chapter}:${bibleInspiration.start_verse}-${bibleInspiration.end_verse}* \n\n${bibleInspiration.text}\n\n_${bibleInspiration.reason}_`;
+            const messageText =
+              `📖 *${bibleInspiration.book} ${bibleInspiration.chapter}:${bibleInspiration.start_verse}-${bibleInspiration.end_verse}* \n\n${bibleInspiration.text}\n\n_${bibleInspiration.reason}_`;
             await sendWhatsAppMessage(phoneNumber, messageText);
 
             // Update the stored chat history with the bible inspiration message
@@ -242,12 +247,12 @@ async function handleUserMessage(phoneNumber: string, message: string) {
             const success = await updateGospelDeliveryTime(
               phoneNumber,
               time,
-              timezone
+              timezone,
             );
             if (!success) {
               await sendWhatsAppMessage(
                 phoneNumber,
-                "Lo siento, no he podido actualizar la hora de entrega del Evangelio."
+                "Lo siento, no he podido actualizar la hora de entrega del Evangelio.",
               );
               return; // Stop further processing if there's an error
             }
@@ -258,7 +263,7 @@ async function handleUserMessage(phoneNumber: string, message: string) {
             console.error(`Unknown function call: ${name}`);
             await sendWhatsAppMessage(
               phoneNumber,
-              "Lo siento, no puedo realizar esa acción por el momento."
+              "Lo siento, no puedo realizar esa acción por el momento.",
             );
             return; // Stop further processing for unknown function calls
           }
@@ -299,10 +304,13 @@ async function registerUser(phoneNumber: string) {
   }
 }
 
-async function updateLastMessageTimestamp(phoneNumber: string) {
+async function updateUser(phoneNumber: string) {
   const { error } = await supabase
     .from("users")
-    .update({ last_message_timestamp: new Date().toISOString() })
+    .update({
+      last_message_timestamp: new Date().toISOString(),
+      reminder_sent: false,
+    })
     .eq("phone_number", phoneNumber);
 
   if (error) {
@@ -367,16 +375,17 @@ async function sendWhatsAppMessage(recipient: string, message: string) {
           type: "text",
           text: { body: message },
         }),
-      }
+      },
     );
 
     if (!response.ok) {
       console.error("Error sending WhatsApp message:", await response.text());
       return;
     }
-    await updateLastMessageTimestamp(recipient);
+    await updateUser(recipient);
   } catch (err) {
     console.error("Error in sendWhatsAppMessage:", err);
+    throw err;
   }
 }
 
@@ -456,14 +465,16 @@ async function queryGemini(userId: string, userMessage: string): Promise<any> {
   }
 }
 
-export async function fetchBibleInspiration(reason: string): Promise<{
-  book: string;
-  chapter: number;
-  start_verse: number;
-  end_verse: number;
-  reason: string;
-  text: string;
-} | null> {
+export async function fetchBibleInspiration(reason: string): Promise<
+  {
+    book: string;
+    chapter: number;
+    start_verse: number;
+    end_verse: number;
+    reason: string;
+    text: string;
+  } | null
+> {
   try {
     // Set up the Bible interpreter model
     const bibleModel = genAI.getGenerativeModel({
@@ -495,7 +506,7 @@ export async function fetchBibleInspiration(reason: string): Promise<{
     console.log("BIBLE INTERPRETER:", result?.response?.candidates?.[0]);
     // Parse the JSON string from the response
     const parsedResponse = JSON.parse(
-      result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "{}"
+      result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "{}",
     );
 
     const {
@@ -509,7 +520,7 @@ export async function fetchBibleInspiration(reason: string): Promise<{
     if (!book || !chapter || !start_verse || !end_verse || !explanation) {
       console.error(
         "Invalid response from Bible Interpreter model:",
-        parsedResponse
+        parsedResponse,
       );
       return null;
     }
@@ -538,10 +549,11 @@ export async function fetchBibleInspiration(reason: string): Promise<{
     // Filter and prioritize verses
     const filteredVerses = data.filter(
       (row: { verse_annotations?: string | null }) =>
-        !row.verse_annotations || row.verse_annotations === "a"
+        !row.verse_annotations || row.verse_annotations === "a",
     );
-    const selectedVerse =
-      filteredVerses.length > 0 ? filteredVerses[0] : data[0];
+    const selectedVerse = filteredVerses.length > 0
+      ? filteredVerses[0]
+      : data[0];
 
     // Combine the verses into a single string
     const verseText = selectedVerse.text;
@@ -565,7 +577,7 @@ export async function fetchBibleInspiration(reason: string): Promise<{
 async function updateGospelDeliveryTime(
   phoneNumber: string,
   time: string,
-  timezone: string
+  timezone: string,
 ): Promise<boolean> {
   const { error } = await supabase
     .from("users")
