@@ -35,13 +35,17 @@ async function sendReminders() {
 
     const now = new Date();
     const reminderThresholdHours = 8;
+    const maxAllowedHours = 24;
 
     for (const user of users) {
       const lastMessageTime = new Date(user.last_message_timestamp);
       const hoursSinceLastMessage =
         (now.getTime() - lastMessageTime.getTime()) / (1000 * 60 * 60);
 
-      if (hoursSinceLastMessage >= reminderThresholdHours) {
+      if (
+        hoursSinceLastMessage >= reminderThresholdHours &&
+        hoursSinceLastMessage < maxAllowedHours
+      ) {
         await sendWhatsAppMessage(
           user.phone_number,
           "Te gustaría recibir el Evangelio de mañana? Recuerda que por limitaciones de WhatsApp, sólo te puedo mandar mensajes si me has escrito en las útlimas 24 horas 🙏",
