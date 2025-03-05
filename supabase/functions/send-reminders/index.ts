@@ -21,22 +21,20 @@ Deno.serve(async (req: Request) => {
 
 async function sendReminders() {
   try {
-    // Get the current UTC time
+    // Get the current UTC time and today's date string (YYYY-MM-DD)
     const nowUTC = new Date();
-    const todayUTC = nowUTC.toISOString().split("T")[0]; // YYYY-MM-DD
+    const todayUTC = nowUTC.toISOString().split("T")[0];
 
-    // Query only users who need a reminder (filtered in Supabase)
+    // Fetch users who have messaged in the last 24 hours
     const { data: users, error } = await supabase
       .from("users")
       .select(
         "phone_number, preferred_time, timezone, last_message_timestamp, last_reminder_sent",
       )
-      .lte( // less than or equal to
+      .gte(
         "last_message_timestamp",
         new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-      ) // User has NOT messaged in last 24 hours
-      .filter("last_reminder_sent", "is", null)
-      .or("last_reminder_sent.lt.NOW() - INTERVAL '23 hours 55 minutes'");
+      );
 
     if (error) {
       console.error("Error fetching users:", error.message);
@@ -56,44 +54,49 @@ async function sendReminders() {
         last_reminder_sent,
       } = user;
 
-      // Convert the user's `preferred_time` to UTC
+      // Convert the user's `preferred_time` (assumed to be a time string) to a Date in the given timezone
       const userGospelSentTimeUTC = new Date(
         new Date(`${todayUTC}T${preferred_time}`).toLocaleString("en-US", {
           timeZone: timezone,
         }),
       );
 
-      // Ensure they received their Gospel today
+      // 1. Ensure the user has already received today's Gospel.
       if (userGospelSentTimeUTC > nowUTC) {
-        continue; // Skip if Gospel has not yet been sent today
+        console.log("Skipped reminder, gospel not sent");
+        continue; // Skip if the Gospel hasn't been sent yet.
       }
 
-      // Ensure at least 8 hours have passed since the Gospel was sent
+      // 2. Ensure at least 8 hours have passed since the Gospel was sent.
       const eightHoursAfterGospel = new Date(
         userGospelSentTimeUTC.getTime() + 8 * 60 * 60 * 1000,
       );
       if (nowUTC < eightHoursAfterGospel) {
-        continue; // Skip if 8 hours have not passed since Gospel was sent
+        console.log("Skipped reminder, less than 8 hours since gospel sent");
+        continue; // Skip if 8 hours haven't passed.
       }
 
-      // Ensure they haven't replied after receiving the Gospel
+      // 3. Ensure the user hasn't replied after receiving the Gospel.
       const userLastMessageTime = new Date(last_message_timestamp);
       if (userLastMessageTime > userGospelSentTimeUTC) {
-        continue; // Skip if user already replied after Gospel
+        console.log("Skipped reminder, user replied");
+        continue; // Skip if the user already replied.
       }
 
-      // Ensure they haven't received a reminder today
+      // 4. Ensure they haven't already received a reminder today.
       if (last_reminder_sent) {
         const lastReminderTime = new Date(last_reminder_sent);
-        const twentyFourHoursAgo = new Date(
+        // Optionally, add a small buffer (e.g., 5 minutes) to avoid precision issues.
+        const twentyFourHoursAgoWithBuffer = new Date(
           Date.now() - (24 * 60 * 60 * 1000) - (5 * 60 * 1000),
-        ); // Subtract an extra 5 minutes for buffer
-
-        if (lastReminderTime > twentyFourHoursAgo) {
-          continue; // Skip if reminded in the last 24 hours
+        );
+        if (lastReminderTime > twentyFourHoursAgoWithBuffer) {
+          console.log("Skipped reminder, already reminded");
+          continue; // Skip if a reminder was sent in the last 24 hours.
         }
       }
 
+      // If all conditions pass, add the user to the list for reminders.
       usersToRemind.push(phone_number);
     }
 
@@ -104,14 +107,18 @@ async function sendReminders() {
     const reminderMessage =
       "¿Te gustaría recibir el Evangelio de mañana? Recuerda que por limitaciones de WhatsApp, solo te puedo mandar mensajes si me has escrito en las últimas 24 horas 🙏";
 
+    // Send reminders and update the last_reminder_sent timestamp
     for (const phoneNumber of usersToRemind) {
-      await sendWhatsAppMessage(phoneNumber, reminderMessage);
-
-      // Update last_reminder_sent timestamp
-      await supabase
-        .from("users")
-        .update({ last_reminder_sent: new Date().toISOString() })
-        .eq("phone_number", phoneNumber);
+      try {
+        await sendWhatsAppMessage(phoneNumber, reminderMessage);
+        await supabase
+          .from("users")
+          .update({ last_reminder_sent: new Date().toISOString() })
+          .eq("phone_number", phoneNumber);
+      } catch (err) {
+        console.error(`Failed to send reminder to ${phoneNumber}:`, err);
+        // Do not update last_reminder_sent if sending fails
+      }
     }
 
     return new Response("Reminders processed successfully", { status: 200 });
@@ -122,33 +129,29 @@ async function sendReminders() {
 }
 
 async function sendWhatsAppMessage(recipient: string, message: string) {
-  console.log("HEREEEE");
-  try {
-    const phoneNumberId = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID");
-    const accessToken = Deno.env.get("WHATSAPP_ACCESS_TOKEN");
+  const phoneNumberId = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID");
+  const accessToken = Deno.env.get("WHATSAPP_ACCESS_TOKEN");
 
-    const response = await fetch(
-      `https://graph.facebook.com/v17.0/${phoneNumberId}/messages`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          to: recipient,
-          type: "text",
-          text: { body: message },
-        }),
+  const response = await fetch(
+    `https://graph.facebook.com/v17.0/${phoneNumberId}/messages`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
       },
-    );
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to: recipient,
+        type: "text",
+        text: { body: message },
+      }),
+    },
+  );
 
-    if (!response.ok) {
-      console.error("Error sending WhatsApp message:", await response.text());
-    }
-  } catch (err) {
-    console.error("Error in sendWhatsAppMessage:", err);
-    throw err;
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("Error sending WhatsApp message:", errorText);
+    throw new Error(`Failed to send message: ${errorText}`);
   }
 }

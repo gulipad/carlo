@@ -293,7 +293,7 @@ async function getUserByPhoneNumber(phoneNumber: string) {
 async function registerUser(phoneNumber: string) {
   const { error } = await supabase.from("users").insert({
     phone_number: phoneNumber,
-    timezone: "UTC+1",
+    timezone: "Europe/Madrid",
     preferred_time: "07:30:00",
     subscribed: true,
     last_message_timestamp: new Date().toISOString(),
