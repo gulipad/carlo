@@ -309,7 +309,6 @@ async function updateUser(phoneNumber: string) {
     .from("users")
     .update({
       last_message_timestamp: new Date().toISOString(),
-      reminder_sent: false,
     })
     .eq("phone_number", phoneNumber);
 

@@ -21,40 +21,97 @@ Deno.serve(async (req: Request) => {
 
 async function sendReminders() {
   try {
+    // Get the current UTC time
+    const nowUTC = new Date();
+    const todayUTC = nowUTC.toISOString().split("T")[0]; // YYYY-MM-DD
+
+    // Query only users who need a reminder (filtered in Supabase)
     const { data: users, error } = await supabase
       .from("users")
-      .select("phone_number, last_message_timestamp, reminder_sent")
-      .eq("reminder_sent", false);
-
-    console.log("HERE: ", users);
+      .select(
+        "phone_number, preferred_time, timezone, last_message_timestamp, last_reminder_sent",
+      )
+      .lte( // less than or equal to
+        "last_message_timestamp",
+        new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+      ) // User has NOT messaged in last 24 hours
+      .filter("last_reminder_sent", "is", null)
+      .or("last_reminder_sent.lt.NOW() - INTERVAL '23 hours 55 minutes'");
 
     if (error) {
       console.error("Error fetching users:", error.message);
       return new Response("Error fetching users", { status: 500 });
     }
 
-    const now = new Date();
-    const reminderThresholdHours = 8;
-    const maxAllowedHours = 24;
+    console.log("Users fetched:", users.length);
+
+    const usersToRemind = [];
 
     for (const user of users) {
-      const lastMessageTime = new Date(user.last_message_timestamp);
-      const hoursSinceLastMessage =
-        (now.getTime() - lastMessageTime.getTime()) / (1000 * 60 * 60);
+      const {
+        phone_number,
+        preferred_time,
+        timezone,
+        last_message_timestamp,
+        last_reminder_sent,
+      } = user;
 
-      if (
-        hoursSinceLastMessage >= reminderThresholdHours &&
-        hoursSinceLastMessage < maxAllowedHours
-      ) {
-        await sendWhatsAppMessage(
-          user.phone_number,
-          "Te gustaría recibir el Evangelio de mañana? Recuerda que por limitaciones de WhatsApp, sólo te puedo mandar mensajes si me has escrito en las útlimas 24 horas 🙏",
-        );
-        await supabase
-          .from("users")
-          .update({ reminder_sent: true })
-          .eq("phone_number", user.phone_number);
+      // Convert the user's `preferred_time` to UTC
+      const userGospelSentTimeUTC = new Date(
+        new Date(`${todayUTC}T${preferred_time}`).toLocaleString("en-US", {
+          timeZone: timezone,
+        }),
+      );
+
+      // Ensure they received their Gospel today
+      if (userGospelSentTimeUTC > nowUTC) {
+        continue; // Skip if Gospel has not yet been sent today
       }
+
+      // Ensure at least 8 hours have passed since the Gospel was sent
+      const eightHoursAfterGospel = new Date(
+        userGospelSentTimeUTC.getTime() + 8 * 60 * 60 * 1000,
+      );
+      if (nowUTC < eightHoursAfterGospel) {
+        continue; // Skip if 8 hours have not passed since Gospel was sent
+      }
+
+      // Ensure they haven't replied after receiving the Gospel
+      const userLastMessageTime = new Date(last_message_timestamp);
+      if (userLastMessageTime > userGospelSentTimeUTC) {
+        continue; // Skip if user already replied after Gospel
+      }
+
+      // Ensure they haven't received a reminder today
+      if (last_reminder_sent) {
+        const lastReminderTime = new Date(last_reminder_sent);
+        const twentyFourHoursAgo = new Date(
+          Date.now() - (24 * 60 * 60 * 1000) - (5 * 60 * 1000),
+        ); // Subtract an extra 5 minutes for buffer
+
+        if (lastReminderTime > twentyFourHoursAgo) {
+          continue; // Skip if reminded in the last 24 hours
+        }
+      }
+
+      usersToRemind.push(phone_number);
+    }
+
+    if (usersToRemind.length === 0) {
+      return new Response("No reminders needed", { status: 200 });
+    }
+
+    const reminderMessage =
+      "¿Te gustaría recibir el Evangelio de mañana? Recuerda que por limitaciones de WhatsApp, solo te puedo mandar mensajes si me has escrito en las últimas 24 horas 🙏";
+
+    for (const phoneNumber of usersToRemind) {
+      await sendWhatsAppMessage(phoneNumber, reminderMessage);
+
+      // Update last_reminder_sent timestamp
+      await supabase
+        .from("users")
+        .update({ last_reminder_sent: new Date().toISOString() })
+        .eq("phone_number", phoneNumber);
     }
 
     return new Response("Reminders processed successfully", { status: 200 });
